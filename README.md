@@ -44,13 +44,7 @@ To execute the entire pipeline—from running the models to generating the final
 
 
 
+```bash
+
 python run.py
-
-
-
-\## Results
-
-
-
-The execution produces a master file named Portfolio\_Optimization\_Results.csv, which provides a standardized record of performance across all models, deltas, and gammas. All generated plots are displayed during execution for immediate comparative analysis.
 
