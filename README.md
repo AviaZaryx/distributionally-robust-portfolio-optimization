@@ -19,7 +19,7 @@ This repository provides a framework for backtesting and comparing various portf
 
 ## Usage
 
-To execute the entire pipeline—from running the models to generating the final reports and plots—run the main script:
+To execute the entire pipeline, from running the models to generating the final reports and plots, run the main script:
 
 ```bash
 python run.py
