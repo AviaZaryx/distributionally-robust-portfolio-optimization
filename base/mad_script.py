@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 
 # ---------------- CONFIG ----------------
 SCALE_FACTOR = 1
-CSV_FILE = 'combined_all_stocks_cleaned.csv'
+CSV_FILE = r'D:\Downloads\pythonProject1\combined_all_stocks_cleaned.csv'
 START_DATE = '2017-01-01'
 END_DATE = '2021-12-31'
 EST_WIN = 250
@@ -81,56 +81,54 @@ def get_stats(r):
     return mn, sd, sh, so, md
 
 
-def run_mad(csv=CSV_FILE, use_custom_tol=False, custom_tol=1e-7):
-    data = load_data(csv)
+def run_mad(data = load_data(CSV_FILE), csv=CSV_FILE, use_custom_tol=False, custom_tol=1e-7, delta = 0.003, GAMMA_RISK = 0.5):
     if data.empty: return pd.DataFrame()
-
-    delta_range = [0, 0.005, 0.01]
-    GAMMA_RISK = 0.5
 
     results = []
 
     # Iterate through each delta and measure runtime
-    for d in delta_range:
-        delta_start_time = time.time()
+    d = delta * 1
 
-        rets_mad = []
-        stats_summary = []
+    delta_start_time = time.time()
 
-        # Run the backtest window logic for this delta
-        for i in range(EST_WIN, len(data) - PRED_WIN, PRED_WIN):
-            est = data.iloc[i - EST_WIN:i].pct_change().dropna()
-            pred = data.iloc[i:i + PRED_WIN].pct_change().dropna()
-            if est.empty: continue
+    rets_mad = []
+    stats_summary = []
 
-            # Run Optimization with optional tolerance settings
-            w, status = optimize_mad(est, GAMMA_RISK, use_custom_tol, custom_tol)
-            stats_summary.append(status)
-            rets_mad.extend(pred.values @ w)
+    # Run the backtest window logic for this delta
+    for i in range(EST_WIN, len(data) - PRED_WIN, PRED_WIN):
+        est = data.iloc[i - EST_WIN:i].pct_change().dropna()
+        pred = data.iloc[i:i + PRED_WIN].pct_change().dropna()
+        if est.empty: continue
 
-        if not rets_mad: continue
+        # Run Optimization with optional tolerance settings
+        w, status = optimize_mad(est, GAMMA_RISK, use_custom_tol, custom_tol)
+        stats_summary.append(status)
+        rets_mad.extend(pred.values @ w)
 
-        # Calculate statistics
-        stats = get_stats(rets_mad)
+        if not rets_mad: return pd.DataFrame()
 
-        delta_end_time = time.time()
-        delta_runtime = delta_end_time - delta_start_time
+    # Calculate statistics
+    stats = get_stats(rets_mad)
 
-        results.append({
-            'Delta': d,
-            'Runtime (s)': delta_runtime,
-            'Mean_MAD': stats[0],
-            'Std_MAD': stats[1],
-            'Sharpe_MAD': stats[2],
-            'Sortino_MAD': stats[3],
-            'MDD_MAD': stats[4]
-        })
+    delta_end_time = time.time()
+    delta_runtime = delta_end_time - delta_start_time
 
-        # Optional: Print status for the first delta to confirm solver health
-        if __name__ == "__main__" and d == delta_range[0]:
-            unique_statuses = pd.Series(stats_summary).value_counts()
-            print(f"\n--- Solver Status Summary (Sample Delta {d}) ---")
-            print(unique_statuses)
+    results.append({
+        'Delta': d,
+        'Gamma': GAMMA_RISK,
+        'Runtime': delta_runtime,
+        'Mean Return': stats[0],
+        'STD DEV': stats[1],
+        'Sharpe Ratio': stats[2],
+        'Sortino Ratio': stats[3],
+        'Max Drawdown': stats[4]
+    })
+
+    # Optional: Print status for the first delta to confirm solver health
+    if __name__ == "__main__":
+        unique_statuses = pd.Series(stats_summary).value_counts()
+        print(f"\n--- Solver Status Summary (Sample Delta {d}) ---")
+        print(unique_statuses)
 
     return pd.DataFrame(results)
 
@@ -141,5 +139,5 @@ if __name__ == "__main__":
 
     print("\n--- CLASSIC MAD RESULTS (Delta Sweep with Runtime) ---")
     # Including Runtime in the print output
-    cols_to_print = ['Delta', 'Runtime (s)', 'Mean_MAD', 'Sharpe_MAD', 'Std_MAD']
-    print(df_res[cols_to_print].to_string(index=False))
+
+    print(df_res.to_string(index=False))

@@ -15,7 +15,7 @@ START_DATE = '2017-01-01'
 END_DATE = '2021-12-31'
 EST_WIN = 250
 PRED_WIN = 21
-N_PARTS = 20
+N_PARTS = 10
 
 # --- CONSOLIDATED TIMERS (All 4 components) ---
 timers = {

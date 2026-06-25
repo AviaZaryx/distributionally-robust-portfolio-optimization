@@ -23,7 +23,7 @@ GLOBAL_COLORS = {
 }
 
 # --- 3. EXECUTE MODELS ---
-csv_file = r'D:\Downloads\pythonProject1\combined_all_stocks_cleaned.csv'
+csv_file = r'D:\Downloads\pythonProject1\merged_stock_data_half.csv'
 
 print("1. Running SOCP...")
 result_socp = socp_script.run_socp(csv_file)
@@ -163,6 +163,13 @@ def generate_individual_spider_plots():
     for d_val in target_deltas:
         fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
 
+        # --- STYLE UPDATES START HERE ---
+        fig.patch.set_facecolor('white')  # Background outside the circle
+        ax.set_facecolor('white')  # Background inside the circle
+        ax.grid(True, color='gray', linestyle='--', linewidth=0.5, alpha=0.7)  # Gray grid
+        ax.spines['polar'].set_color('gray')  # Make the outer circular border gray
+        # --- STYLE UPDATES END HERE ---
+
         # Gathering stats for the specific delta point
         model_data = []
         labels = ['SOCP', 'DRO-MAD', 'Classic MV', 'Classic MAD', 'Moehle', '1/N']
@@ -170,7 +177,7 @@ def generate_individual_spider_plots():
 
         def get_row_vals(df, d, cols, is_mad=False, is_dro=False):
             subset = df[np.isclose(df['delta'], d)]
-            if subset.empty: return [0] * 6
+            if subset.empty: return [0] * 5  # Adjusted to 5 to match metrics length
             r = subset.iloc[0]
             if is_dro:
                 return [r['Mean Return'], r['Std Dev'], r['Sharpe Ratio'], r['Sortino Ratio'], abs(r['Max Drawdown'])]
@@ -185,18 +192,14 @@ def generate_individual_spider_plots():
         model_data.append(get_row_vals(df_moehle, d_val, None))
         model_data.append(get_row_vals(df_1n, d_val, None))
 
-        # Add this before data = np.array(model_data)
-        for i, row in enumerate(model_data):
-            print(f"Model {i} length: {len(row)}")
-
         data = np.array(model_data)
         norm_data = np.zeros_like(data)
         for i in range(num_vars):
             col = data[:, i]
-            if i in [1, 4, 5]:  # Risk/MDD/Runtime: Invert
+            if i in [1, 4]:  # Vol and MDD: Lower is better (Invert)
                 best_val = col.min()
                 norm_data[:, i] = [best_val / v if v != 0 else 1.0 for v in col]
-            else:  # Higher is better
+            else:  # Return, Sharpe, Sortino: Higher is better
                 best_val = col.max()
                 norm_data[:, i] = [v / best_val if best_val != 0 else 0.0 for v in col]
 
@@ -205,15 +208,13 @@ def generate_individual_spider_plots():
             values += values[:1]
             lw = 4 if color_keys[idx] == 'SOCP' else 2.5
             ax.plot(angles, values, color=GLOBAL_COLORS[color_keys[idx]], linewidth=lw, label=name, zorder=10)
-            ax.fill(angles, values, color=GLOBAL_COLORS[color_keys[idx]], alpha=0.05)
+            # ax.fill(angles, values, color=GLOBAL_COLORS[color_keys[idx]], alpha=0.05)
 
         ax.set_theta_offset(np.pi / 2)
         ax.set_theta_direction(-1)
         ax.set_yticklabels([])
-        ax.set_thetagrids(np.degrees(angles[:-1]), metrics, fontsize=29)
+        ax.set_thetagrids(np.degrees(angles[:-1]), metrics, fontsize=30)  # Slightly reduced font for clarity
         ax.set_ylim(0, 1.1)
-        # plt.title(f"Comparison at Delta = {d_val}\n Gamma = 10", weight='bold', pad=20)
-        # plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
         plt.show()
 
 

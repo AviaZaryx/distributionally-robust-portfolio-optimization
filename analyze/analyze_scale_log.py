@@ -10,7 +10,7 @@ NAME_MAP = {'socp': 'SOCP', 'mv': 'Classic MV', 'mad': 'Classic MAD', 'dro_mad':
             '1n': '1/N'}
 
 
-def load_and_plot_scaling_linear():
+def load_and_plot_scaling_log():
     if not os.path.exists(CSV_FILE):
         print(f"File not found: {CSV_FILE}")
         return
@@ -21,7 +21,6 @@ def load_and_plot_scaling_linear():
     # --- INCREASED HEIGHT: (Width=16, Height=20) ---
     plt.figure(figsize=(16, 20))
 
-    # We will store solver info here to sort it later
     plot_data_list = []
 
     for _, row in df_scale.iterrows():
@@ -34,16 +33,16 @@ def load_and_plot_scaling_linear():
             if pd.isna(row[col]) or val.strip() == "" or val.lower() == 'nan':
                 continue
 
-            # Robust parsing for numbers (handles 'nan' inside parens and scientific notation)
             numbers = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", val)
             if numbers:
                 total_time = sum(float(n) for n in numbers)
-                x_vals.append(int(col.split('=')[1]))
-                y_vals.append(total_time)
+                # Avoid plotting 0 in log scale (will result in error or missing point)
+                if total_time > 0:
+                    x_vals.append(int(col.split('=')[1]))
+                    y_vals.append(total_time)
 
         if x_vals:
-            # Determine the runtime specifically at N=100 for sorting purposes
-            # If N=100 is not present for a solver, we treat it as 0
+            # Determine the runtime specifically at N=100 for sorting
             val_at_100 = 0
             for x, y in zip(x_vals, y_vals):
                 if x == 100:
@@ -59,9 +58,7 @@ def load_and_plot_scaling_linear():
                 'zorder': 10 if model_name == 'SOCP' else 5
             })
 
-    # --- SORT LEGEND BY RUNTIME AT N=100 ---
-    # reverse=True puts the slowest (highest value) at the top of the legend
-    # which usually matches the visual order of the lines on the graph
+    # Sort legend by runtime at N=100
     plot_data_list.sort(key=lambda item: item['sort_val'], reverse=True)
 
     # Now plot the sorted data
@@ -69,22 +66,29 @@ def load_and_plot_scaling_linear():
         plt.plot(item['x'], item['y'], label=item['name'], color=item['color'],
                  marker='o', linewidth=6, markersize=16, zorder=item['zorder'])
 
-    # --- STYLING (Fonts and sizes kept the same) ---
-    plt.title('Computational Scalability', fontsize=40, fontweight='bold', pad=40)
+    # --- LOG SCALE TRANSFORMATION ---
+    plt.xscale('log')
+    plt.yscale('log')
+
+    # --- STYLING ---
+    plt.title('Computational Scalability (Log-Log)', fontsize=40, fontweight='bold', pad=40)
     plt.xlabel('Number of Assets ($N$)', fontsize=32, fontweight='bold', labelpad=20)
     plt.ylabel('Total Time [Seconds]', fontsize=32, fontweight='bold', labelpad=20)
+
+    # Adjusting tick parameters for log scale visibility
     plt.xticks(fontsize=26)
     plt.yticks(fontsize=26)
 
-    plt.legend(title="Models", title_fontsize='30', fontsize=26,
-               loc='upper left', frameon=True, shadow=True, borderpad=1.5, labelspacing=1.2)
+    #plt.legend(title="Models", title_fontsize='20', fontsize=16, loc='upper left', frameon=True, shadow=True, borderpad=1.5, labelspacing=1.2)
 
-    plt.grid(True, linestyle='--', alpha=0.6, linewidth=2)
+    # Use which='both' to show grid lines for minor log ticks
+    plt.grid(False)
+
     plt.tight_layout()
-    plt.savefig('time_scale.png', dpi=300, bbox_inches='tight')
-    print("Plot saved successfully with updated height and sorted legend.")
+    plt.savefig('time_scale_log.png', dpi=300, bbox_inches='tight')
+    print("Plot saved successfully with Log-Log scale.")
     plt.show()
 
 
 if __name__ == "__main__":
-    load_and_plot_scaling_linear()
+    load_and_plot_scaling_log()

@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 
 # ---------------- CONFIG ----------------
 SCALE_FACTOR = 1
-CSV_FILE = r"D:\Downloads\pythonProject1\merged_stock_data_half.csv"
+CSV_FILE = r'D:\Downloads\pythonProject1\combined_all_stocks_cleaned.csv'
 START_DATE = '2017-01-01'
 END_DATE = '2021-12-31'
 EST_WIN = 250
@@ -121,7 +121,7 @@ def run_moehle_paper(csv=CSV_FILE, use_custom_tol=False, custom_tol=1e-7):
     data = load_data(csv)
     if data.empty: return pd.DataFrame()
 
-    delta_range = [0.05]
+    delta_range = [0.003]
     gamma_range = [5]
     FIXED_TRD_COST, FIXED_HLD_COST, LIN_TRD_COST = 0.0001, 0.0001, 0.0010
     results = []
@@ -250,6 +250,7 @@ if __name__ == "__main__":
     for key, val in timers.items():
         print(f"{key}: {val:.4f}s")
     print(f"\nResults saved to analyzed.csv")
+    print(df_res.to_string(index=False))
 
 def comp_analyze_mohle():
     run_moehle_paper()

@@ -11,18 +11,17 @@ warnings.filterwarnings('ignore')
 # ---------------- CONFIG ----------------
 CSV_INPUT = r'D:\Downloads\pythonProject1\merged_stock_data.csv'
 CSV_OUTPUT = r'D:\Downloads\pythonProject1\time_scale_size.csv'
+CSV_RUNS_OUTPUT = r'D:\Downloads\pythonProject1\mohle_sampled_run.csv'
 
 START_DATE = '2017-01-01'
 END_DATE = '2021-12-31'
 EST_WIN = 250
 PRED_WIN = 21
 
-# Sampling Config
-POOL_SIZE = 200  # The total pool to sample from
-NUM_TRIALS = 10  # Average results over 10 random runs
-INCREMENTS = 10  # Number of steps (e.g., 20, 40, 60... 200)
+POOL_SIZE = 200
+NUM_TRIALS = 10
+INCREMENTS = 20
 
-# --- CONSOLIDATED TIMERS ---
 timers = {
     "Data Processing": 0,
     "Model Setup & Compilation": 0,
@@ -33,7 +32,7 @@ timers = {
 
 def reset_timers():
     for key in timers:
-        timers[key] = 0
+        timers[key] = 0.0
 
 
 # --- 1. DATA LOADING ---
@@ -61,7 +60,6 @@ def optimize_moehle_nonconvex(returns, prev_w, gamma_risk, f_trd, l_trd, f_hld):
     mu = returns.mean().values
     Sigma = returns.cov().values
 
-    # Regularization
     min_eig = np.min(np.linalg.eigvalsh(Sigma))
     if min_eig < 1e-8: Sigma += (1e-8 - min_eig) * np.eye(n)
 
@@ -86,10 +84,8 @@ def optimize_moehle_nonconvex(returns, prev_w, gamma_risk, f_trd, l_trd, f_hld):
         t_before_solve = time.perf_counter()
         prob.solve(solver=cp.ECOS_BB)
         t_after_solve = time.perf_counter()
-
         solve_time = prob.solver_stats.solve_time if prob.solver_stats else (t_after_solve - t_before_solve)
         overhead = (t_after_solve - t_before_solve) - solve_time
-
         timers["Solver (Math)"] += solve_time
         timers["Model Setup & Compilation"] += overhead
         status = prob.status
@@ -102,16 +98,23 @@ def optimize_moehle_nonconvex(returns, prev_w, gamma_risk, f_trd, l_trd, f_hld):
     return res_w
 
 
-# --- 3. CSV UPDATE ---
+# --- 3. CSV UPDATES ---
+
+def format_as_decimal(val):
+    """Ensures value is a plain decimal string with 6 places, no scientific notation."""
+    return f"{float(val):.6f}"
+
+
 def update_scale_csv(solver_name, scaling_values, size_labels):
+    """Updates averages in time_scale_size.csv using plain decimal strings."""
     rows = []
     if os.path.exists(CSV_OUTPUT) and os.path.getsize(CSV_OUTPUT) > 0:
         with open(CSV_OUTPUT, mode='r', newline='') as f:
             rows = list(csv.DictReader(f))
 
     new_data = {"solver": solver_name}
-    for i, val in enumerate(scaling_values):
-        new_data[f"N={size_labels[i]}"] = val
+    for i, val_str in enumerate(scaling_values):
+        new_data[f"N={size_labels[i]}"] = val_str
 
     found = False
     for row in rows:
@@ -135,31 +138,47 @@ def update_scale_csv(solver_name, scaling_values, size_labels):
         writer.writerows(rows)
 
 
+def save_raw_runs(raw_data_list):
+    """Saves every individual trial to mohle_sampled_run.csv with forced decimal formatting."""
+    fieldnames = ["N", "Trial", "Data Processing", "Model Setup & Compilation", "Solver (Math)",
+                  "Backtest & Post-processing", "Total Time"]
+
+    with open(CSV_RUNS_OUTPUT, mode='w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for entry in raw_data_list:
+            # Format every timing field as a decimal string before writing
+            formatted_row = {
+                "N": entry["N"],
+                "Trial": entry["Trial"],
+                "Data Processing": format_as_decimal(entry["Data Processing"]),
+                "Model Setup & Compilation": format_as_decimal(entry["Model Setup & Compilation"]),
+                "Solver (Math)": format_as_decimal(entry["Solver (Math)"]),
+                "Backtest & Post-processing": format_as_decimal(entry["Backtest & Post-processing"]),
+                "Total Time": format_as_decimal(entry["Total Time"])
+            }
+            writer.writerow(formatted_row)
+
+
 # --- 4. EXECUTION LOOP ---
 def run_scaling():
     data = load_data(CSV_INPUT)
     if data.empty: return
 
-    # Define the fixed pool (first 200 tickers)
     full_pool = data.columns.tolist()[:POOL_SIZE]
-
-    # Calculate step size based on POOL_SIZE and INCREMENTS
     step = POOL_SIZE // INCREMENTS
     test_sizes = [i * step for i in range(1, INCREMENTS + 1)]
 
     scaling_results = []
     actual_labels = []
+    all_individual_runs = []
 
     for n in test_sizes:
         print(f"\n--- Scaling Moehle: N={n} (Averaging {NUM_TRIALS} runs) ---")
-
-        # Accumulators for averaging
         trial_accumulator = np.zeros(4)
 
         for trial in range(1, NUM_TRIALS + 1):
             reset_timers()
-
-            # SAMPLE: Random selection of N tickers from the pool
             selected_tickers = np.random.choice(full_pool, n, replace=False)
 
             t_slice_start = time.perf_counter()
@@ -167,40 +186,44 @@ def run_scaling():
             timers["Data Processing"] += (time.perf_counter() - t_slice_start)
 
             prev_w = np.zeros(n)
-
-            # Backtest Loop
             for i in range(EST_WIN, len(subset) - PRED_WIN, PRED_WIN):
                 t_est_start = time.perf_counter()
                 est = subset.iloc[i - EST_WIN:i].pct_change().dropna()
                 timers["Data Processing"] += (time.perf_counter() - t_est_start)
-
                 if est.empty: continue
                 w = optimize_moehle_nonconvex(est, prev_w, 5, 0.0001, 0.0010, 0.0001)
                 prev_w = w
 
-            # Add this trial's results to accumulator
+            # Capture raw data
+            total_t = sum(timers.values())
+            all_individual_runs.append({
+                "N": n, "Trial": trial,
+                "Data Processing": timers["Data Processing"],
+                "Model Setup & Compilation": timers["Model Setup & Compilation"],
+                "Solver (Math)": timers["Solver (Math)"],
+                "Backtest & Post-processing": timers["Backtest & Post-processing"],
+                "Total Time": total_t
+            })
+
             trial_accumulator[0] += timers["Data Processing"]
             trial_accumulator[1] += timers["Model Setup & Compilation"]
             trial_accumulator[2] += timers["Solver (Math)"]
             trial_accumulator[3] += timers["Backtest & Post-processing"]
-
             print(f"  Trial {trial}/{NUM_TRIALS} complete.")
 
-        # Calculate Averages
-        avg_results = trial_accumulator / NUM_TRIALS
-        res_tuple = (
-            round(avg_results[0], 6),
-            round(avg_results[1], 6),
-            round(avg_results[2], 6),
-            round(avg_results[3], 6)
-        )
+        # Calculate averages and format them as decimal strings within the tuple string
+        avg_vals = trial_accumulator / NUM_TRIALS
+        formatted_tuple = "(" + ", ".join([format_as_decimal(v) for v in avg_vals]) + ")"
 
-        scaling_results.append(str(res_tuple))
+        scaling_results.append(formatted_tuple)
         actual_labels.append(n)
-        print(f"Finished N={n}. Avg Total Time: {sum(res_tuple):.2f}s")
+        print(f"Finished N={n}. Avg Total Time: {sum(avg_vals):.2f}s")
 
     update_scale_csv("Moehle_Sampled", scaling_results, actual_labels)
-    print(f"\nSampled results saved to {CSV_OUTPUT}")
+    save_raw_runs(all_individual_runs)
+
+    print(f"\nAveraged results (decimals) updated in {CSV_OUTPUT}")
+    print(f"Individual trial results (decimals) saved to {CSV_RUNS_OUTPUT}")
 
 
 if __name__ == "__main__":

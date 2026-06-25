@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 
 # ---------------- CONFIG ----------------
 SCALE_FACTOR = 1
-CSV_FILE = 'combined_all_stocks_cleaned.csv'
+CSV_FILE = r'D:\Downloads\pythonProject1\combined_all_stocks_cleaned.csv'
 START_DATE = '2017-01-01'
 END_DATE = '2021-12-31'
 EST_WIN = 250
@@ -97,86 +97,78 @@ def optimize_moehle_nonconvex(returns, prev_w, gamma_risk, fixed_trd_cost, lin_t
 
 
 # --- 3. Backtest Engine ---
-def run_moehle_paper(csv=CSV_FILE, use_custom_tol=False, custom_tol=1e-7):
-    data = load_data(csv)
+def run_moehle_paper(data = load_data(CSV_FILE), csv=CSV_FILE, use_custom_tol=False, custom_tol=1e-7, d = 0.003, g = 5,
+FIXED_TRD_COST = 0.0001, FIXED_HLD_COST = 0.0001, LIN_TRD_COST = 0.0010):
+
     if data.empty: return pd.DataFrame()
-
-    delta_range = [0, 0.005, 0.01]
-    gamma_range = [5]
-
-    FIXED_TRD_COST = 0.0001
-    FIXED_HLD_COST = 0.0001
-    LIN_TRD_COST = 0.0010
 
     results = []
 
-    for d in delta_range:
-        # Start timer for each delta
-        delta_start_time = time.time()
+    # Start timer for each delta
+    delta_start_time = time.time()
 
-        for g in gamma_range:
-            rets_gamma = []
-            prev_w = np.zeros(data.shape[1])
-            stats_summary = []
+    rets_gamma = []
+    prev_w = np.zeros(data.shape[1])
+    stats_summary = []
 
-            for i in range(EST_WIN, len(data) - PRED_WIN, PRED_WIN):
-                est = data.iloc[i - EST_WIN:i].pct_change().dropna()
-                pred = data.iloc[i:i + PRED_WIN].pct_change().dropna()
+    for i in range(EST_WIN, len(data) - PRED_WIN, PRED_WIN):
+        est = data.iloc[i - EST_WIN:i].pct_change().dropna()
+        pred = data.iloc[i:i + PRED_WIN].pct_change().dropna()
 
-                if est.empty: continue
+        if est.empty: continue
 
-                # Optimization with potential tolerance override
-                w, status = optimize_moehle_nonconvex(
-                    est, prev_w, g, FIXED_TRD_COST, LIN_TRD_COST, FIXED_HLD_COST,
-                    use_custom_tol=use_custom_tol, custom_tol=custom_tol
-                )
-                stats_summary.append(status)
+        # Optimization with potential tolerance override
+        w, status = optimize_moehle_nonconvex(
+            est, prev_w, g, FIXED_TRD_COST, LIN_TRD_COST, FIXED_HLD_COST,
+            use_custom_tol=use_custom_tol, custom_tol=custom_tol
+        )
+        stats_summary.append(status)
 
-                raw_ret = pred.values @ w
+        raw_ret = pred.values @ w
 
-                trade_mag = np.abs(w - prev_w)
-                cost_lin = LIN_TRD_COST * np.sum(trade_mag)
+        trade_mag = np.abs(w - prev_w)
+        cost_lin = LIN_TRD_COST * np.sum(trade_mag)
 
-                epsilon = 1e-5
-                has_traded = (trade_mag > epsilon).astype(float)
-                cost_fix_trd = FIXED_TRD_COST * np.sum(has_traded)
+        epsilon = 1e-5
+        has_traded = (trade_mag > epsilon).astype(float)
+        cost_fix_trd = FIXED_TRD_COST * np.sum(has_traded)
 
-                has_held = (w > epsilon).astype(float)
-                cost_fix_hld = FIXED_HLD_COST * np.sum(has_held)
+        has_held = (w > epsilon).astype(float)
+        cost_fix_hld = FIXED_HLD_COST * np.sum(has_held)
 
-                total_cost = cost_lin + cost_fix_trd + cost_fix_hld
-                raw_ret[0] -= total_cost
+        total_cost = cost_lin + cost_fix_trd + cost_fix_hld
+        raw_ret[0] -= total_cost
 
-                rets_gamma.extend(raw_ret)
-                prev_w = w
+        rets_gamma.extend(raw_ret)
+        prev_w = w
 
-            # Calculate Runtime for this delta
-            delta_end_time = time.time()
-            runtime = delta_end_time - delta_start_time
+    # Calculate Runtime for this delta
+    delta_end_time = time.time()
+    runtime = delta_end_time - delta_start_time
 
-            if __name__ == "__main__":
-                unique_statuses = pd.Series(stats_summary).value_counts()
-                print(f"\n--- Solver Status (Delta={d}, Gamma={g}) ---")
-                print(unique_statuses)
+    if __name__ == "__main__":
+        unique_statuses = pd.Series(stats_summary).value_counts()
+        print(f"\n--- Solver Status (Delta={d}, Gamma={g}) ---")
+        print(unique_statuses)
 
-            s = pd.Series(rets_gamma)
-            mean = s.mean() * 252
-            std = s.std() * np.sqrt(252)
-            sharpe = mean / std if std > 0 else 0
-            ds = s[s < 0].std() * np.sqrt(252)
-            sortino = mean / ds if ds > 0 else 0
-            mdd = ((1 + s).cumprod() / (1 + s).cumprod().cummax() - 1).min()
+    s = pd.Series(rets_gamma)
+    mean = s.mean() * 252
+    std = s.std() * np.sqrt(252)
+    sharpe = mean / std if std > 0 else 0
+    ds = s[s < 0].std() * np.sqrt(252)
+    sortino = mean / ds if ds > 0 else 0
+    mdd = ((1 + s).cumprod() / (1 + s).cumprod().cummax() - 1).min()
 
-            results.append({
-                'delta': d,
-                'Runtime (s)': runtime,
-                'gamma_risk': g,
-                'mean_return': mean / SCALE_FACTOR,
-                'std_dev': std / SCALE_FACTOR,
-                'sharpe_ratio': sharpe,
-                'sortino_ratio': sortino,
-                'max_drawdown': mdd
-            })
+    results.append({
+        'Delta': d,
+        'Runtime': runtime,
+        'Gamma': g,
+        'Mean Return': mean / SCALE_FACTOR,
+        'STD DEV': std / SCALE_FACTOR,
+        'Sharpe Ratio': sharpe,
+        'Sortino Ratio': sortino,
+        'Max Drawdown': mdd
+    })
 
     return pd.DataFrame(results)
 
@@ -185,4 +177,4 @@ if __name__ == "__main__":
     # To use customizable tolerance, set use_custom_tol=True
     df_res = run_moehle_paper(use_custom_tol=False, custom_tol=1e-7)
     print("\n--- MOEHLE RESULTS SUMMARY ---")
-    print(df_res[['delta', 'Runtime (s)', 'sharpe_ratio', 'mean_return']].to_string(index=False))
+    print(df_res.to_string(index=False))

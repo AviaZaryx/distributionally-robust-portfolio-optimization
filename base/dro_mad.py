@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 
 # ---------------- CONFIG ----------------
 SCALE_FACTOR = 1
-CSV_FILE = 'combined_all_stocks_cleaned.csv'
+CSV_FILE = r'D:\Downloads\pythonProject1\combined_all_stocks_cleaned.csv'
 START_DATE = '2017-01-01'
 END_DATE = '2021-12-31'
 EST_WIN = 250
@@ -106,67 +106,63 @@ def optimize_dromad(returns, epsilon, rho_target, use_custom_tol=False, custom_t
 
 
 # --- 3. Backtest Engine ---
-def run_dro_mad(csv=CSV_FILE, use_custom_tol=False, custom_tol=1e-7):
-    data = load_data(csv)
+def run_dro_mad(data = load_data(CSV_FILE), csv=CSV_FILE, use_custom_tol=False, custom_tol=1e-7, delta = 0.003, FIXED_GAMMA_FOR_CONSISTENCY = 0.5, rho_target = 0.0012):
     if data.empty:
         return pd.DataFrame()
-
-    delta_range = [0, 0.005, 0.01]
-    rho_target = 0.0012
-    FIXED_GAMMA_FOR_CONSISTENCY = 0.5
 
     results = []
     statuses = []
 
-    for d in delta_range:
-        # START TIMER FOR THIS DELTA
-        delta_start_time = time.time()
+    d = delta
 
-        rets = []
-        stats_summary = []
-        internal_epsilon = d * DELTA_RESCALE_FACTOR
+    # START TIMER FOR THIS DELTA
+    delta_start_time = time.time()
 
-        for i in range(EST_WIN, len(data) - PRED_WIN, PRED_WIN):
-            est_data = data.iloc[i - EST_WIN:i].pct_change().dropna()
-            pred_data = data.iloc[i:i + PRED_WIN].pct_change().dropna()
+    rets = []
+    stats_summary = []
+    internal_epsilon = d * DELTA_RESCALE_FACTOR
 
-            if est_data.empty: continue
+    for i in range(EST_WIN, len(data) - PRED_WIN, PRED_WIN):
+        est_data = data.iloc[i - EST_WIN:i].pct_change().dropna()
+        pred_data = data.iloc[i:i + PRED_WIN].pct_change().dropna()
 
-            # 1. Run Optimization and get status (Pass through tolerance settings)
-            w, status = optimize_dromad(est_data, internal_epsilon, rho_target, use_custom_tol, custom_tol)
-            stats_summary.append(status)
+        if est_data.empty: continue
 
-            # 2. Portfolio realization
-            rets.extend(pred_data.values @ w)
+        # 1. Run Optimization and get status (Pass through tolerance settings)
+        w, status = optimize_dromad(est_data, internal_epsilon, rho_target, use_custom_tol, custom_tol)
+        stats_summary.append(status)
 
-        if not rets: continue
+        # 2. Portfolio realization
+        rets.extend(pred_data.values @ w)
 
-        # END TIMER FOR THIS DELTA
-        delta_end_time = time.time()
-        delta_runtime = delta_end_time - delta_start_time
+    if not rets: return pd.DataFrame()
 
-        # Print solver status summary for this delta
-        unique_statuses = pd.Series(stats_summary).value_counts()
-        statuses.append(unique_statuses)
+    # END TIMER FOR THIS DELTA
+    delta_end_time = time.time()
+    delta_runtime = delta_end_time - delta_start_time
 
-        # Stats Calculation
-        s = pd.Series(rets)
-        mean_ann = s.mean() * 252
-        std_ann = s.std() * np.sqrt(252)
-        sharpe = mean_ann / std_ann if std_ann > 0 else 0
-        sortino = mean_ann / (s[s < 0].std() * np.sqrt(252)) if (s[s < 0].std() > 0) else 0
-        mdd = ((1 + s).cumprod() / (1 + s).cumprod().cummax() - 1).min()
+    # Print solver status summary for this delta
+    unique_statuses = pd.Series(stats_summary).value_counts()
+    statuses.append(unique_statuses)
 
-        results.append({
-            'Delta': d,
-            'Runtime (s)': delta_runtime,  # Added runtime here
-            'gamma_risk': FIXED_GAMMA_FOR_CONSISTENCY,
-            'Mean Return': mean_ann / SCALE_FACTOR,
-            'Std Dev': std_ann / SCALE_FACTOR,
-            'Sharpe Ratio': sharpe,
-            'Sortino Ratio': sortino,
-            'Max Drawdown': mdd
-        })
+    # Stats Calculation
+    s = pd.Series(rets)
+    mean_ann = s.mean() * 252
+    std_ann = s.std() * np.sqrt(252)
+    sharpe = mean_ann / std_ann if std_ann > 0 else 0
+    sortino = mean_ann / (s[s < 0].std() * np.sqrt(252)) if (s[s < 0].std() > 0) else 0
+    mdd = ((1 + s).cumprod() / (1 + s).cumprod().cummax() - 1).min()
+
+    results.append({
+        'Delta': d,
+        'Runtime': delta_runtime,  # Added runtime here
+        'Gamma': FIXED_GAMMA_FOR_CONSISTENCY,
+        'Mean Return': mean_ann / SCALE_FACTOR,
+        'STD DEV': std_ann / SCALE_FACTOR,
+        'Sharpe Ratio': sharpe,
+        'Sortino Ratio': sortino,
+        'Max Drawdown': mdd
+    })
 
     if __name__ == "__main__":
         print("\n--- ALL DELTA STATUSES ---")

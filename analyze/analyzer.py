@@ -1,122 +1,70 @@
-import csv
-import os
+import csv, os
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.colors as mcolors
 
-# --- MAPPING & CONFIGURATION ---
-GLOBAL_COLORS = {
-    'socp': '#000000',  # Black
-    'mv': '#d62728',  # Red
-    'mad': '#ff7f0e',  # Orange
-    'moehle': '#1f77b4',  # Blue
-    'dro_mad': '#1b9e77',  # Teal
-    '1n': '#984ea3'  # Purple
-}
-
-CATEGORIES = ["Data Processing", "Model Setup & Compilation", "Solver (Math)", "Backtest & Post-processing"]
-# High-density hatches for better visibility on small bars
+GLOBAL_COLORS = {'socp': '#000000', 'mv': '#d62728', 'mad': '#ff7f0e', 'moehle': '#1f77b4', 'dro_mad': '#1b9e77',
+                 '1n': '#984ea3'}
+NAME_MAP = {'socp': 'SOCP', 'mv': 'Classic MV', 'mad': 'Classic MAD', 'dro_mad': 'DRO-MAD', 'moehle': 'Moehle',
+            '1n': '1/N'}
+CATEGORIES = ["Data Processing", "Setup & Compilation", "Solver (Math)", "Post-processing"]
 HATCHES = ['', '////', '....', 'xxxx']
 
 
 def get_high_contrast_gradient(hex_color, step):
-    """
-    Uses an aggressive non-linear blend to ensure dark colors
-    (like SOCP/Black) become clearly visible gray/white segments.
-    """
     rgb = np.array(mcolors.to_rgb(hex_color))
-    white = np.array([1.0, 1.0, 1.0])
-
-    # Step-based white-mix fractions:
-    # 0% white (base), 45% white, 75% white, 92% white
     fractions = [0.0, 0.45, 0.75, 0.92]
-    f = fractions[step]
-
-    return rgb + (white - rgb) * f
-
-
-def load_and_sort_data(filename=r"D:\Downloads\pythonProject1\analyzed.csv"):
-    if not os.path.exists(filename):
-        print(f"Error: {filename} not found.")
-        return []
-
-    data = []
-    with open(filename, mode='r', newline='') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            processed_row = {"solver": row["solver"]}
-            total_time = 0.0
-            for cat in CATEGORIES:
-                val = float(row.get(cat, 0.0))
-                processed_row[cat] = val
-                total_time += val
-            processed_row["total"] = total_time
-            data.append(processed_row)
-
-    return sorted(data, key=lambda x: x["total"])
+    return rgb + (np.array([1.0, 1.0, 1.0]) - rgb) * fractions[step]
 
 
 def visualize_timing_gradient():
-    sorted_data = load_and_sort_data(r"D:\Downloads\pythonProject1\analyzed.csv")
-    if not sorted_data: return
+    filename = r"D:\Downloads\pythonProject1\analyzed.csv"
+    data = []
+    with open(filename, mode='r') as f:
+        for row in csv.DictReader(f):
+            row_data = {"solver": row["solver"], "total": 0.0}
+            for cat, short_cat in zip(
+                    ["Data Processing", "Model Setup & Compilation", "Solver (Math)", "Backtest & Post-processing"],
+                    CATEGORIES):
+                val = float(row.get(cat, 0.0))
+                row_data[short_cat] = val
+                row_data["total"] += val
+            data.append(row_data)
 
-    n_solvers = len(sorted_data)
-    indices = np.arange(n_solvers)
-    solver_labels = [d["solver"] for d in sorted_data]
+    sorted_data = sorted(data, key=lambda x: x["total"])
 
-    plt.figure(figsize=(12, 7))
-    bottoms = np.zeros(n_solvers)
+    # LARGE SYNCHRONIZED CANVAS
+    plt.figure(figsize=(16, 12))
+    bottoms = np.zeros(len(sorted_data))
 
-    # Plot categories one by one
     for i, cat in enumerate(CATEGORIES):
         cat_values = [d[cat] for d in sorted_data]
-
         for s_idx, d in enumerate(sorted_data):
-            base_color = GLOBAL_COLORS.get(d["solver"].lower(), "#95a5a6")
-            face_color = get_high_contrast_gradient(base_color, i)
-
-            # Determine if the background is dark. If so, make the hatch lines white.
-            # This is crucial for SOCP (Black) and 1n (Purple)
-            luminance = 0.299 * face_color[0] + 0.587 * face_color[1] + 0.114 * face_color[2]
-            hatch_color = 'white' if luminance < 0.45 else 'black'
-
-            # Plot individual bar segments to allow per-segment hatch colors
-            plt.bar(
-                indices[s_idx], cat_values[s_idx], bottom=bottoms[s_idx],
-                color=face_color,
-                edgecolor=hatch_color,  # Match hatch color to edge for visibility
-                linewidth=0.5,
-                hatch=HATCHES[i],
-                width=0.7
-            )
-
+            face_color = get_high_contrast_gradient(GLOBAL_COLORS.get(d["solver"].lower(), "#95a5a6"), i)
+            lum = 0.299 * face_color[0] + 0.587 * face_color[1] + 0.114 * face_color[2]
+            plt.bar(s_idx, cat_values[s_idx], bottom=bottoms[s_idx], color=face_color,
+                    edgecolor='white' if lum < 0.45 else 'black', linewidth=2, hatch=HATCHES[i], width=0.7)
         bottoms += np.array(cat_values)
 
-    # --- LEGEND ---
-    # Legend shows the patterns clearly with high contrast
+    # --- DOUBLED FONTS & UNITS ---
+    plt.title('Time Breakdown by Component', fontsize=40, fontweight='bold', pad=40)
+    plt.ylabel('Execution Time [Seconds]', fontsize=32, fontweight='bold', labelpad=20)
+    plt.xlabel('Optimization Models', fontsize=32, fontweight='bold', labelpad=20)
+    plt.xticks(range(len(sorted_data)), [NAME_MAP.get(d["solver"].lower(), d["solver"]) for d in sorted_data],
+               fontsize=22)
+    plt.yticks(fontsize=26)
+
+    # --- DOUBLED LEGEND ---
     legend_elements = [
-        plt.Rectangle((0, 0), 1, 1, facecolor='#cccccc', edgecolor='black',
-                      hatch=HATCHES[i], label=CATEGORIES[i])
-        for i in range(len(CATEGORIES))
-    ]
+        plt.Rectangle((0, 0), 1, 1, facecolor='#cccccc', edgecolor='black', hatch=HATCHES[i], label=CATEGORIES[i]) for i
+        in range(len(CATEGORIES))]
+    plt.legend(handles=legend_elements[::-1], title="Components", title_fontsize='30', fontsize=26,
+               loc='upper left', frameon=True, shadow=True, borderpad=1.5, labelspacing=1.2)
 
-    plt.legend(
-        handles=legend_elements[::-1],
-        title="Timing Breakdown"
-              "",
-        loc='upper left'
-    )
-
-    # Styling
-    plt.ylabel('Time (seconds)', fontsize=12, fontweight='bold')
-    plt.xlabel('Solvers (Fastest to Slowest)', fontsize=12, fontweight='bold')
-    plt.title('Solver Performance Analysis', fontsize=14, pad=15)
-    plt.xticks(indices, solver_labels)
-    plt.grid(axis='y', linestyle='--', alpha=0.3)
-
+    plt.grid(axis='y', linestyle='--', alpha=0.4, linewidth=2)
     plt.tight_layout()
+    plt.savefig('time.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
-if __name__ == "__main__":
-    visualize_timing_gradient()
+visualize_timing_gradient()
